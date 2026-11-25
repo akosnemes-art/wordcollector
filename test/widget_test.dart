@@ -92,32 +92,129 @@ void main() {
     expect(translationOpacity().opacity, 0);
   });
 
-  test('looks up the bundled dictionaries in both directions', () async {
-    final service = HybridTranslationService();
-    expect(
-      await service.translate(
-        '  Alma ',
-        sourceLanguage: 'hu',
-        targetLanguage: 'en',
+  test(
+    'returns common meanings first and keeps other dictionary senses',
+    () async {
+      final service = HybridTranslationService();
+      Future<List<String>> lookup(String word, String source) async {
+        final result = await service.translate(
+          word,
+          sourceLanguage: source,
+          targetLanguage: source == 'hu' ? 'en' : 'hu',
+        );
+        expect(result.isOnline, isFalse, reason: word);
+        return result.options;
+      }
+
+      for (final (source, word, expected) in [
+        ('hu', '  Alma ', 'apple'),
+        ('hu', 'könyv', 'book'),
+        ('hu', 'ház', 'house'),
+        ('hu', 'macska', 'cat'),
+        ('hu', 'kenyér', 'bread'),
+        ('en', 'CAT', 'macska'),
+        ('en', 'book', 'könyv'),
+        ('en', 'table', 'asztal'),
+        ('en', 'water', 'víz'),
+        ('en', 'go', 'megy'),
+        ('en', 'to go', 'megy'),
+        ('en', 'goodbye', 'viszlát'),
+        ('en', 'Good morning!', 'jó reggelt'),
+        ('en', 'abacus', 'számológép'),
+        ('en', 'dictionary', 'szótár'),
+      ]) {
+        expect((await lookup(word, source)).first, expected, reason: word);
+      }
+      expect(
+        await lookup('book', 'en'),
+        containsAll(['könyv', 'jegyzetfüzet']),
+      );
+      expect(
+        await lookup('spring', 'en'),
+        containsAll(['tavasz', 'rugó', 'forrás']),
+      );
+      expect(await lookup('bank', 'en'), containsAll(['bank', 'part']));
+      expect(await lookup('light', 'en'), contains('könnyű'));
+      expect(await lookup('művész', 'hu'), contains('artist'));
+    },
+  );
+
+  testWidgets('saves the chosen meaning and uses it in practice', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'source_language_v1': 'en'});
+    await tester.pumpWidget(_collectionWithTestTranslator(['tavasz', 'rugó']));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'spring');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('Choose a translation for “spring”'), findsOneWidget);
+    expect(await WordRepository().loadWords(), isEmpty);
+
+    await tester.tap(find.text('rugó'));
+    await tester.pumpAndSettle();
+    expect((await WordRepository().loadWords()).single.translation, 'rugó');
+
+    await _openPractice(tester);
+    await _submit(tester, 'rugó');
+    expect(find.text('Practice complete.'), findsOneWidget);
+  });
+
+  testWidgets('asks for confirmation before saving an online result', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _collectionWithResult(
+        const TranslationResult(['online result'], isOnline: true),
       ),
-      'apple',
     );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'some phrase');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
     expect(
-      await service.translate(
-        'abacus',
-        sourceLanguage: 'en',
-        targetLanguage: 'hu',
-      ),
-      'számológép',
+      find.text('Check the online translation for “some phrase”'),
+      findsOneWidget,
     );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(await WordRepository().loadWords(), isEmpty);
     expect(
-      await service.translate(
-        'dictionary',
-        sourceLanguage: 'en',
-        targetLanguage: 'hu',
-      ),
-      'szótár',
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'some phrase',
     );
+  });
+
+  testWidgets('can look up and replace a previously saved translation', (
+    tester,
+  ) async {
+    _seedCollection(1);
+    await tester.pumpWidget(
+      _collectionWithTestTranslator(['new meaning', 'another meaning']),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.text('answer 0'), const Offset(180, 0));
+    await tester.pumpAndSettle();
+    final hold = await tester.startGesture(
+      tester.getCenter(find.text('word 0')),
+    );
+    await tester.pump(const Duration(seconds: 3));
+    await hold.up();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Look up translation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('new meaning'));
+    await tester.pumpAndSettle();
+    expect((await WordRepository().loadWords()).single.translation, 'answer 0');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final entry = (await WordRepository().loadWords()).single;
+    expect(entry.id, '0');
+    expect(entry.createdAt, DateTime(2020));
+    expect(entry.translation, 'new meaning');
   });
 
   testWidgets(
@@ -229,9 +326,12 @@ void main() {
   }
 }
 
-Widget _collectionWithTestTranslator() => MaterialApp(
+Widget _collectionWithTestTranslator([List<String> options = const ['dog']]) =>
+    _collectionWithResult(TranslationResult(options));
+
+Widget _collectionWithResult(TranslationResult result) => MaterialApp(
   theme: libraryTheme(),
-  home: const CollectionScreen(translationService: _TestTranslator()),
+  home: CollectionScreen(translationService: _TestTranslator(result)),
 );
 
 void _seedCollection(int count) {
@@ -265,12 +365,14 @@ Future<void> _submit(WidgetTester tester, String answer) async {
 }
 
 class _TestTranslator implements TranslationService {
-  const _TestTranslator();
+  const _TestTranslator(this.result);
+
+  final TranslationResult result;
 
   @override
-  Future<String> translate(
+  Future<TranslationResult> translate(
     String text, {
     required String sourceLanguage,
     required String targetLanguage,
-  }) async => 'dog';
+  }) async => result;
 }

@@ -11,11 +11,13 @@ keeps your collection on your device in the order you saved it.
 ## Use the app
 
 - Add a word in either direction. The bundled FreeDict dictionaries work
-  offline. If an entry is missing, the app sends the word and language pair to
-  MyMemory for an online translation.
+  offline. Choose the meaning you want to save when a word has several
+  translations. If an entry is missing, the app sends the word and language
+  pair to MyMemory and asks you to confirm the online result before saving.
 - A new translation stays visible for five seconds. Rub the translation area
   to reveal it again, then hold the word or its visible translation for three
-  seconds to edit it.
+  seconds to edit it. Use **Look up translation** to replace a saved meaning
+  with another dictionary result.
 - Open **Practice mode** in the side menu to type translations from a shuffled
   copy of your collection. Three wrong answers on a word restart the round.
   You can reveal one answer per eight collected words, rounded up. Asking for

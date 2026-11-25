@@ -6,6 +6,7 @@ import '../library_theme.dart';
 import '../models/word_entry.dart';
 import '../services/translation_service.dart';
 import '../services/word_repository.dart';
+import '../widgets/translation_editor.dart';
 import '../widgets/word_row.dart';
 import 'practice_screen.dart';
 
@@ -33,6 +34,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
   String _sourceLanguage = 'hu';
   bool _loading = true;
   bool _translating = false;
+  bool _choosingTranslation = false;
   bool _saving = false;
 
   String get _targetLanguage => _sourceLanguage == 'hu' ? 'en' : 'hu';
@@ -40,7 +42,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
       _sourceLanguage == 'hu' ? 'Hungarian → English' : 'English → Hungarian';
   int get _pageCount =>
       math.max(1, (_words.length + _wordsPerPage - 1) ~/ _wordsPerPage);
-  bool get _busy => _loading || _translating || _saving;
+  bool get _busy => _loading || _translating || _choosingTranslation || _saving;
 
   @override
   void initState() {
@@ -100,12 +102,25 @@ class _CollectionScreenState extends State<CollectionScreen> {
     setState(() => _translating = true);
     try {
       final source = _sourceLanguage;
-      final translation = await _translationService.translate(
+      final result = await _translationService.translate(
         word,
         sourceLanguage: source,
         targetLanguage: _targetLanguage,
       );
       if (!mounted) return;
+      if (result.options.length > 1 || result.isOnline) {
+        _inputFocus.unfocus();
+        setState(() {
+          _translating = false;
+          _choosingTranslation = true;
+        });
+      }
+      final translation = await chooseTranslation(
+        context,
+        word: word,
+        result: result,
+      );
+      if (!mounted || translation == null) return;
       final now = DateTime.now();
       final entry = WordEntry(
         id: now.microsecondsSinceEpoch.toString(),
@@ -122,49 +137,26 @@ class _CollectionScreenState extends State<CollectionScreen> {
     } on TranslationException catch (error) {
       if (mounted) _showMessage(error.message);
     } finally {
-      if (mounted) setState(() => _translating = false);
+      if (mounted) {
+        setState(() {
+          _translating = false;
+          _choosingTranslation = false;
+        });
+      }
     }
   }
 
   Future<void> _editTranslation(WordEntry entry) async {
     if (_busy) return;
-    final formKey = GlobalKey<FormState>();
-    var translation = entry.translation;
     final result = await showDialog<String>(
       context: context,
-      builder: (context) {
-        void save() {
-          if (formKey.currentState!.validate()) {
-            Navigator.pop(context, translation.trim());
-          }
-        }
-
-        return AlertDialog(
-          scrollable: true,
-          title: const Text('Edit translation'),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              autofocus: true,
-              initialValue: entry.translation,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(labelText: entry.word),
-              onChanged: (value) => translation = value,
-              onFieldSubmitted: (_) => save(),
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Enter a translation.'
-                  : null,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(onPressed: save, child: const Text('Save')),
-          ],
-        );
-      },
+      builder: (context) => TranslationEditor(
+        word: entry.word,
+        translation: entry.translation,
+        sourceLanguage: entry.sourceLanguage ?? _sourceLanguage,
+        allowDirectionChange: entry.sourceLanguage == null,
+        service: _translationService,
+      ),
     );
     if (!mounted || result == null || result == entry.translation) return;
     await _saveCollection([
@@ -225,7 +217,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
         content: const Text(
           'New translations stay visible for five seconds. Rub across a '
           'hidden translation to reveal it. While it is visible, hold the '
-          'word or translation for three seconds to edit it.\n\n'
+          'word or translation for three seconds to edit it or look up other '
+          'meanings.\n\n'
           'In Practice mode, type each translation. A round restarts after '
           'three mistakes on one word or if you exceed your reveal allowance. '
           'You get one reveal per eight words, rounded up.',
@@ -255,10 +248,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
                   title: 'Word Collector',
                   leading: IconButton(
                     tooltip: 'Open menu',
-                    onPressed: () {
-                      _inputFocus.unfocus();
-                      _scaffoldKey.currentState?.openDrawer();
-                    },
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            _inputFocus.unfocus();
+                            _scaffoldKey.currentState?.openDrawer();
+                          },
                     icon: const Icon(Icons.menu),
                   ),
                   detail: _direction.toUpperCase(),
@@ -395,12 +390,14 @@ class _CollectionScreenState extends State<CollectionScreen> {
         controller: _input,
         focusNode: _inputFocus,
         enabled: !_loading,
-        readOnly: _translating || _saving,
+        readOnly: _busy,
         textInputAction: TextInputAction.done,
         autocorrect: false,
         onSubmitted: (_) => _addWord(),
         decoration: InputDecoration(
-          hintText: _translating ? 'Looking up word…' : 'Add a word…',
+          hintText: _translating
+              ? 'Looking up word…'
+              : 'Add ${_sourceLanguage == 'hu' ? 'a Hungarian' : 'an English'} word…',
           suffixIcon: _translating
               ? const Padding(
                   padding: EdgeInsets.all(13),
@@ -468,7 +465,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
             ],
             const Padding(
               padding: EdgeInsets.fromLTRB(14, 16, 14, 12),
-              child: Text('Version 0.1.0', style: libraryLabel),
+              child: Text('Version 0.1.1', style: libraryLabel),
             ),
           ],
         ),

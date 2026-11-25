@@ -6,7 +6,7 @@ import 'package:html/parser.dart' as html;
 
 /// Reads the UTF-8, zlib-compressed SLOB format used by the bundled FreeDict files.
 class SlobDictionary {
-  SlobDictionary(ByteData data) : _data = data {
+  SlobDictionary(ByteData data, this._hungarianSource) : _data = data {
     final reader = _SlobReader(data);
     if (reader.text(8) != '!-1SLOB\x1f') {
       throw const FormatException('Invalid SLOB signature');
@@ -39,18 +39,20 @@ class SlobDictionary {
     final refs = refPositions + refCount * 8;
     for (var index = 0; index < refCount; index++) {
       reader.offset = refs + data.getUint64(refPositions + index * 8);
-      final key = _normalize(reader.text(reader.uint16()));
+      final key = normalizeKey(reader.text(reader.uint16()));
       (_index[key] ??= []).add(reader.offset);
     }
   }
 
   final ByteData _data;
+  final bool _hungarianSource;
   final _index = <String, List<int>>{};
   late final List<String> _contentTypes;
   late final int _store;
 
-  String? lookup(String word) {
-    for (final offset in _index[_normalize(word)] ?? const <int>[]) {
+  Set<String> lookup(String word) {
+    final results = <String>{};
+    for (final offset in _index[normalizeKey(word)] ?? const <int>[]) {
       final reader = _SlobReader(_data)..offset = offset;
       final bin = reader.uint32();
       final item = reader.uint16();
@@ -70,19 +72,20 @@ class SlobDictionary {
       final itemOffset = blob.uint32();
       blob.offset = itemCount * 4 + itemOffset;
       final entry = html.parse(blob.text(blob.uint32()));
-      for (final quote in entry.querySelectorAll('.cit.trans .quote')) {
-        if (quote.children.any((child) => child.classes.contains('quote'))) {
-          continue;
+      for (final quote in entry.querySelectorAll('li.cit.trans li.quote')) {
+        if (quote.querySelector('.quote') != null) continue;
+        final value = quote.text.trim().replaceAll(_whitespace, ' ');
+        if (value.isNotEmpty) {
+          results.add(_hungarianSource ? value : fixHungarianAccents(value));
         }
-        final translation = quote.text.trim();
-        if (translation.isNotEmpty) return translation;
       }
     }
-    return null;
+    return results;
   }
 
-  static String _normalize(String word) =>
-      word.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  String normalizeKey(String word) => normalizeDictionaryKey(
+    _hungarianSource ? fixHungarianAccents(word) : word,
+  );
 }
 
 class _SlobReader {
@@ -119,3 +122,15 @@ class _SlobReader {
 
   String text(int length) => utf8.decode(bytes(length));
 }
+
+final _whitespace = RegExp(r'\s+');
+
+String normalizeDictionaryKey(String word) =>
+    word.trim().toLowerCase().replaceAll('’', "'").replaceAll(_whitespace, ' ');
+
+// The bundled dictionaries use circumflexes for some Hungarian double acutes.
+String fixHungarianAccents(String value) => value
+    .replaceAll('ô', 'ő')
+    .replaceAll('û', 'ű')
+    .replaceAll('Ô', 'Ő')
+    .replaceAll('Û', 'Ű');
