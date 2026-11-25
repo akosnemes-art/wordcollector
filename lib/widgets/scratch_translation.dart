@@ -27,7 +27,7 @@ class ScratchTranslation extends StatefulWidget {
 class _ScratchTranslationState extends State<ScratchTranslation> {
   static const _initialRevealTime = Duration(seconds: 5);
   static const _scratchRevealTime = Duration(seconds: 3);
-  static const _editHoldTime = Duration(seconds: 3);
+  static const _editHoldTime = Duration(seconds: 2);
   static const _rubDistance = 150.0;
 
   Timer? _hideTimer;

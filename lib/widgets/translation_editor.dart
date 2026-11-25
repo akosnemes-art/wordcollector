@@ -2,36 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../services/translation_service.dart';
 
-Future<String?> chooseTranslation(
-  BuildContext context, {
-  required String word,
-  required TranslationResult result,
-}) async {
-  final options = result.options;
-  if (options.length == 1 && !result.isOnline) return options.single;
-  return showDialog<String>(
-    context: context,
-    builder: (context) => SimpleDialog(
-      title: Text(
-        result.isOnline
-            ? 'Check the online translation for “$word”'
-            : 'Choose a translation for “$word”',
-      ),
-      children: [
-        for (final option in options)
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, option),
-            child: Text(option),
-          ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-      ],
-    ),
-  );
-}
-
 class TranslationEditor extends StatefulWidget {
   const TranslationEditor({
     super.key,
@@ -58,6 +28,7 @@ class _TranslationEditorState extends State<TranslationEditor> {
   late var _source = widget.sourceLanguage;
   bool _lookingUp = false;
   String? _lookupError;
+  List<String> _alternatives = const [];
 
   @override
   void dispose() {
@@ -76,6 +47,7 @@ class _TranslationEditorState extends State<TranslationEditor> {
     setState(() {
       _lookingUp = true;
       _lookupError = null;
+      _alternatives = const [];
     });
     try {
       final result = await widget.service.translate(
@@ -84,12 +56,8 @@ class _TranslationEditorState extends State<TranslationEditor> {
         targetLanguage: _source == 'hu' ? 'en' : 'hu',
       );
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
-      final selection = await chooseTranslation(
-        context,
-        word: widget.word,
-        result: result,
-      );
-      if (mounted && selection != null) _input.text = selection;
+      _input.text = result.primary;
+      setState(() => _alternatives = result.options.skip(1).take(5).toList());
     } on TranslationException catch (error) {
       if (mounted) setState(() => _lookupError = error.message);
     } finally {
@@ -140,6 +108,17 @@ class _TranslationEditorState extends State<TranslationEditor> {
               icon: const Icon(Icons.search),
               label: Text(_lookingUp ? 'Looking up…' : 'Look up translation'),
             ),
+            if (_alternatives.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final meaning in _alternatives)
+                    ActionChip(
+                      label: Text(meaning),
+                      onPressed: () => _input.text = meaning,
+                    ),
+                ],
+              ),
             if (_lookupError case final message?) Text(message),
           ],
         ),

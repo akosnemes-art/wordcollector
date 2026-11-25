@@ -1,3 +1,37 @@
+Word Collector offline Hungarian–English dictionary
+
+This generated dictionary filters and ranks lexical equivalents from several
+sources. The combined wiktionary-hu-en.json.gz asset is available under
+Creative Commons Attribution-ShareAlike 4.0 International.
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Hungarian entries by English Wiktionary contributors, through the Kaikki.org
+Wiktextract export based on the 2026-10-01 English Wiktionary dump.
+https://kaikki.org/dictionary/Hungarian/
+https://en.wiktionary.org/wiki/Wiktionary:Copyrights
+Download https://kaikki.org/dictionary/Hungarian/kaikki.org-dictionary-Hungarian.jsonl
+Uncompressed SHA-256 27dc483058ac0e95a37d4bcaee670150f9a1057679b2c02891b1c2ebad38847b
+
+Direct English-to-Hungarian entries by English Wiktionary contributors,
+extracted by Gilles Sérasset and the GETALP team for DBnary. The upstream
+DBnary dataset is published under CC BY-SA 3.0.
+https://kaiko.getalp.org/about-dbnary/
+https://creativecommons.org/licenses/by-sa/3.0/
+Download https://kaiko.getalp.org/about-dbnary/ontolex/en/en_dbnary_ontolex_2026-11-01.ttl.bz2
+SHA-256 33aec6c4d133f9a57ad2de4d8c21c9139bfa9df744d67bb4687a0323b53f4244
+
+Hungarian usage ranking uses Hermit Dave’s FrequencyWords Hungarian list
+from OpenSubtitles 2018 under CC BY-SA 4.0.
+https://github.com/hermitdave/FrequencyWords
+Download https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/hu/hu_50k.txt
+SHA-256 b765780a1277c3b1e326205c972b1ea1631732ec54ab489d13d21618ceab4fec
+
+From the repository root, regenerate the asset with Python 3.9 or newer.
+python3 tools/build_wiktionary_dictionary.py hungarian.jsonl hu_50k.txt en_dbnary_ontolex_2026-11-01.ttl.bz2 dictionaries/wiktionary-hu-en.json.gz
+
+Live lookups use Wiktapi and return Wiktionary contributors’ data.
+https://wiktapi.dev/quickstart
+
 Word Collector bundles two FreeDict dictionaries, read directly from their SLOB files.
 
 Hungarian–English FreeDict Dictionary, 0.4.1

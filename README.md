@@ -10,14 +10,14 @@ keeps your collection on your device in the order you saved it.
 
 ## Use the app
 
-- Add a word in either direction. The bundled FreeDict dictionaries work
-  offline. Choose the meaning you want to save when a word has several
-  translations. If an entry is missing, the app sends the word and language
-  pair to MyMemory and asks you to confirm the online result before saving.
+- Add a word in either direction. Word Collector saves the highest-ranked
+  translation directly. It looks up the submitted word and language through
+  Wiktapi’s live Wiktionary API and uses its bundled dictionaries if the lookup
+  is unavailable or has no matching entry.
 - A new translation stays visible for five seconds. Rub the translation area
-  to reveal it again, then hold the word or its visible translation for three
-  seconds to edit it. Use **Look up translation** to replace a saved meaning
-  with another dictionary result.
+  to reveal it again, then hold the word or its visible translation for two
+  seconds to edit it. Use **Look up translation** to refresh an old translation
+  or see other meanings in the editor before saving.
 - Open **Practice mode** in the side menu to type translations from a shuffled
   copy of your collection. Three wrong answers on a word restart the round.
   You can reveal one answer per eight collected words, rounded up. Asking for
@@ -44,6 +44,7 @@ signer from another build environment, configure the private `android/key.proper
 file with `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. Keep the
 keystore and credentials outside version control.
 
-The [dictionary notices](dictionaries/NOTICE.txt) and [source archives](dictionaries/source)
+The [dictionary notices](dictionaries/NOTICE.txt) describe the source data and
+how to regenerate the offline dictionary. The [FreeDict source archives](dictionaries/source)
 are included in this repository. The [Noto font notice](assets/fonts/NOTICE.txt)
 covers the bundled typeface.

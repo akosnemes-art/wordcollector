@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'common_translations.dart';
 import 'slob_dictionary.dart';
+import 'wiktionary_client.dart';
 
 abstract interface class TranslationService {
   Future<TranslationResult> translate(
@@ -16,21 +17,28 @@ abstract interface class TranslationService {
 }
 
 class TranslationResult {
-  const TranslationResult(this.options, {this.isOnline = false});
+  const TranslationResult(this.options);
 
   final List<String> options;
-  final bool isOnline;
+
+  String get primary => options.first;
 }
 
 class HybridTranslationService implements TranslationService {
+  HybridTranslationService({
+    Future<List<String>> Function(String word, String sourceLanguage)?
+    lookupOnline,
+  }) : _lookupOnline = lookupOnline ?? const WiktionaryClient().lookup;
+
   static const _assets = {
     'hu-en': 'dictionaries/freedict-hun-eng-0.4.1.slob',
     'en-hu': 'dictionaries/freedict-eng-hun-0.2.1.slob',
   };
-
   static final _closingPunctuation = RegExp(r'[!?]+$');
 
+  final Future<List<String>> Function(String, String) _lookupOnline;
   final _dictionaries = <String, Future<SlobDictionary>>{};
+  late final _lexicon = _loadLexicon();
 
   Future<SlobDictionary> _loadDictionary(
     String asset, {
@@ -40,95 +48,99 @@ class HybridTranslationService implements TranslationService {
     return compute((data) => SlobDictionary(data, hungarianSource), bytes);
   }
 
+  Future<Map<String, Map<String, List<String>>>> _loadLexicon() async {
+    final bytes = await rootBundle.load(
+      'dictionaries/wiktionary-hu-en.json.gz',
+    );
+    return compute(_decodeLexicon, Uint8List.sublistView(bytes));
+  }
+
+  static Map<String, Map<String, List<String>>> _decodeLexicon(
+    Uint8List bytes,
+  ) {
+    final data =
+        jsonDecode(utf8.decode(gzip.decode(bytes))) as Map<String, dynamic>;
+    return data.map(
+      (language, words) => MapEntry(
+        language,
+        (words as Map<String, dynamic>).map(
+          (word, options) =>
+              MapEntry(word, (options as List<dynamic>).cast<String>()),
+        ),
+      ),
+    );
+  }
+
   @override
   Future<TranslationResult> translate(
     String text, {
     required String sourceLanguage,
     required String targetLanguage,
   }) async {
-    final cleanText = text.trim();
-    final pair = '$sourceLanguage-$targetLanguage';
-    final asset = _assets[pair];
-    if (asset != null) {
-      final dictionary = await _dictionaries.putIfAbsent(
-        pair,
-        () => _loadDictionary(asset, hungarianSource: sourceLanguage == 'hu'),
-      );
-      final exactKey = dictionary.normalizeKey(cleanText);
-      final key = exactKey.replaceFirst(_closingPunctuation, '').trimRight();
-      final english = sourceLanguage == 'en';
-      final plainKey = english && key.startsWith('to ')
-          ? key.substring(3)
-          : key;
-      final common = commonTranslations[sourceLanguage]?[plainKey];
-      final options = <String, String>{};
-      if (common != null) options[normalizeDictionaryKey(common)] = common;
-      final entries = dictionary.lookup(exactKey);
-      if (key != exactKey) entries.addAll(dictionary.lookup(key));
-      if (english && !key.startsWith('to ')) {
-        entries.addAll(dictionary.lookup('to $key'));
-      }
-      for (final value in entries) {
-        options.putIfAbsent(normalizeDictionaryKey(value), () => value);
-      }
-      if (options.isNotEmpty) {
-        return TranslationResult(options.values.toList(growable: false));
-      }
-    }
-
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
-    try {
-      final uri = Uri.https('api.mymemory.translated.net', '/get', {
-        'q': cleanText,
-        'langpair': '$sourceLanguage|$targetLanguage',
-      });
-      final request = await client.getUrl(uri);
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final response = await request.close().timeout(
-        const Duration(seconds: 5),
-      );
-      if (response.statusCode != HttpStatus.ok) {
-        throw const TranslationException(
-          'The translation service is unavailable.',
-        );
-      }
-
-      final body = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(const Duration(seconds: 5));
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      if (json['responseStatus'].toString() != '200') {
-        throw const TranslationException(
-          'The translation service is unavailable.',
-        );
-      }
-      final responseData = json['responseData'] as Map<String, dynamic>?;
-      final translated = responseData?['translatedText'] as String?;
-      if (translated == null || translated.trim().isEmpty) {
-        throw const TranslationException('No translation was returned.');
-      }
-      return TranslationResult([
-        _decodeBasicEntities(translated.trim()),
-      ], isOnline: true);
-    } on TranslationException {
-      rethrow;
-    } on Object {
+    final asset = _assets['$sourceLanguage-$targetLanguage'];
+    if (asset == null) {
       throw const TranslationException(
-        'Could not translate. Check your internet connection and try again.',
+        'Choose Hungarian or English for lookup.',
       );
-    } finally {
-      client.close(force: true);
     }
-  }
+    final hungarian = sourceLanguage == 'hu';
+    final spelling = text
+        .trim()
+        .replaceFirst(_closingPunctuation, '')
+        .trimRight();
+    final normalized = normalizeDictionaryKey(
+      hungarian ? fixHungarianAccents(spelling) : spelling,
+    );
+    final key = !hungarian && normalized.startsWith('to ')
+        ? normalized.substring(3)
+        : normalized;
+    if (key.isEmpty) {
+      throw const TranslationException('Enter a word to translate.');
+    }
 
-  String _decodeBasicEntities(String value) {
-    return value
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>');
+    final lookup = _lookupOnline(key, sourceLanguage);
+    final entries = (await _lexicon)[sourceLanguage];
+    final local = entries?[normalized] ?? entries?[key] ?? const <String>[];
+    final online = await lookup;
+    final preferred = commonTranslations[sourceLanguage]?[key];
+    final options = <String, String>{};
+    void add(String word) {
+      final cleaned = hungarian
+          ? word.trim()
+          : fixHungarianAccents(word.trim());
+      if (cleaned.isNotEmpty) {
+        options.putIfAbsent(normalizeDictionaryKey(cleaned), () => cleaned);
+      }
+    }
+
+    if (preferred != null) add(preferred);
+    // Keep a locally ranked equivalent when the live dictionary confirms it.
+    if (local.isNotEmpty &&
+        online.any(
+          (term) =>
+              normalizeDictionaryKey(term) ==
+              normalizeDictionaryKey(local.first),
+        )) {
+      add(local.first);
+    }
+    online.forEach(add);
+    local.forEach(add);
+    if (options.isEmpty) {
+      final dictionary = await _dictionaries.putIfAbsent(
+        asset,
+        () => _loadDictionary(asset, hungarianSource: hungarian),
+      );
+      dictionary.lookup(spelling).forEach(add);
+      if (!hungarian && !normalized.startsWith('to ')) {
+        dictionary.lookup('to $key').forEach(add);
+      }
+    }
+    if (options.isEmpty) {
+      throw const TranslationException(
+        'No dictionary entry found. Check the spelling or try the base word.',
+      );
+    }
+    return TranslationResult(options.values.take(8).toList(growable: false));
   }
 }
 

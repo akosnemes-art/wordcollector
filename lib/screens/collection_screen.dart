@@ -34,7 +34,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
   String _sourceLanguage = 'hu';
   bool _loading = true;
   bool _translating = false;
-  bool _choosingTranslation = false;
   bool _saving = false;
 
   String get _targetLanguage => _sourceLanguage == 'hu' ? 'en' : 'hu';
@@ -42,7 +41,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
       _sourceLanguage == 'hu' ? 'Hungarian → English' : 'English → Hungarian';
   int get _pageCount =>
       math.max(1, (_words.length + _wordsPerPage - 1) ~/ _wordsPerPage);
-  bool get _busy => _loading || _translating || _choosingTranslation || _saving;
+  bool get _busy => _loading || _translating || _saving;
 
   @override
   void initState() {
@@ -108,24 +107,11 @@ class _CollectionScreenState extends State<CollectionScreen> {
         targetLanguage: _targetLanguage,
       );
       if (!mounted) return;
-      if (result.options.length > 1 || result.isOnline) {
-        _inputFocus.unfocus();
-        setState(() {
-          _translating = false;
-          _choosingTranslation = true;
-        });
-      }
-      final translation = await chooseTranslation(
-        context,
-        word: word,
-        result: result,
-      );
-      if (!mounted || translation == null) return;
       final now = DateTime.now();
       final entry = WordEntry(
         id: now.microsecondsSinceEpoch.toString(),
         word: word,
-        translation: translation,
+        translation: result.primary,
         createdAt: now,
         sourceLanguage: source,
       );
@@ -137,12 +123,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     } on TranslationException catch (error) {
       if (mounted) _showMessage(error.message);
     } finally {
-      if (mounted) {
-        setState(() {
-          _translating = false;
-          _choosingTranslation = false;
-        });
-      }
+      if (mounted) setState(() => _translating = false);
     }
   }
 
@@ -217,11 +198,14 @@ class _CollectionScreenState extends State<CollectionScreen> {
         content: const Text(
           'New translations stay visible for five seconds. Rub across a '
           'hidden translation to reveal it. While it is visible, hold the '
-          'word or translation for three seconds to edit it or look up other '
+          'word or translation for two seconds to edit it or look up other '
           'meanings.\n\n'
           'In Practice mode, type each translation. A round restarts after '
           'three mistakes on one word or if you exceed your reveal allowance. '
-          'You get one reveal per eight words, rounded up.',
+          'You get one reveal per eight words, rounded up.\n\n'
+          'Online lookups send the word and its language to Wiktapi. The '
+          'offline dictionary uses Wiktionary data via Kaikki.org and DBnary, '
+          'ranked with FrequencyWords (CC BY-SA 4.0). FreeDict supplements it.',
         ),
         actions: [
           TextButton(
@@ -465,7 +449,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
             ],
             const Padding(
               padding: EdgeInsets.fromLTRB(14, 16, 14, 12),
-              child: Text('Version 0.1.1', style: libraryLabel),
+              child: Text('Version 0.1.2', style: libraryLabel),
             ),
           ],
         ),
