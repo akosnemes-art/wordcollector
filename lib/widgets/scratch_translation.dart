@@ -13,12 +13,16 @@ class ScratchTranslation extends StatefulWidget {
     required this.createdAt,
     this.word,
     this.onEdit,
+    this.dragTarget,
+    this.compact = false,
   });
 
   final String translation;
   final DateTime createdAt;
   final Widget? word;
   final VoidCallback? onEdit;
+  final Widget Function(Widget child, bool available)? dragTarget;
+  final bool compact;
 
   @override
   State<ScratchTranslation> createState() => _ScratchTranslationState();
@@ -26,7 +30,7 @@ class ScratchTranslation extends StatefulWidget {
 
 class _ScratchTranslationState extends State<ScratchTranslation> {
   static const _initialRevealTime = Duration(seconds: 5);
-  static const _scratchRevealTime = Duration(seconds: 3);
+  static const _scratchRevealTime = Duration(seconds: 5);
   static const _editHoldTime = Duration(seconds: 2);
   static const _rubDistance = 150.0;
 
@@ -117,6 +121,7 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
   @override
   Widget build(BuildContext context) {
     final fullyVisible = _reveal == 1;
+    final compact = widget.compact;
     final translation = Semantics(
       label: fullyVisible
           ? 'Translation: ${widget.translation}'
@@ -136,7 +141,7 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
           onHorizontalDragEnd: (_) => _finishRub(),
           onHorizontalDragCancel: _finishRub,
           child: Container(
-            constraints: const BoxConstraints(minHeight: 42),
+            constraints: BoxConstraints(minHeight: compact ? 24 : 36),
             alignment: Alignment.centerLeft,
             decoration: BoxDecoration(
               color: Color.lerp(libraryCanvas, libraryPaper, _reveal),
@@ -165,7 +170,7 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
                     ),
                     child: Text(
                       widget.translation,
-                      maxLines: 2,
+                      maxLines: compact ? 1 : 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: libraryAccent,
@@ -207,14 +212,26 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
             child: translation,
           );
     final word = widget.word;
-    return word == null
-        ? field
-        : Row(
-            children: [
-              Expanded(child: word),
-              const SizedBox(width: 12),
-              Expanded(child: field),
-            ],
-          );
+    if (word == null) return field;
+    final wrapDrag = widget.dragTarget;
+    const gutter = SizedBox(
+      width: 12,
+      child: ColoredBox(color: Colors.transparent),
+    );
+    final answer = ColoredBox(
+      color: Colors.transparent,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: compact ? 3 : 5),
+        child: field,
+      ),
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: word),
+        wrapDrag?.call(gutter, true) ?? gutter,
+        Expanded(child: wrapDrag?.call(answer, _reveal == 0) ?? answer),
+      ],
+    );
   }
 }

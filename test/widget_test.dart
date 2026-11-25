@@ -11,7 +11,9 @@ import 'package:wordcollector/screens/collection_screen.dart';
 import 'package:wordcollector/services/translation_service.dart';
 import 'package:wordcollector/services/wiktionary_client.dart';
 import 'package:wordcollector/services/word_repository.dart';
+import 'package:wordcollector/widgets/credit_floral_frame.dart';
 import 'package:wordcollector/widgets/scratch_translation.dart';
+import 'package:wordcollector/widgets/word_row.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +55,14 @@ void main() {
         find.descendant(of: splash, matching: find.text('Version $appVersion')),
         findsOneWidget,
       );
-      await tester.pump(const Duration(milliseconds: 2990));
+      final floralFrame = find.byType(CreditFloralFrame);
+      double growth() =>
+          tester.widget<CreditFloralFrame>(floralFrame).growth.value;
+      expect(growth(), 0);
+      await tester.pump(const Duration(milliseconds: 1300));
+      expect(growth(), inExclusiveRange(0, 1));
+      await tester.pump(const Duration(milliseconds: 1690));
+      expect(growth(), 1);
       expect(splash, findsOneWidget);
       expect(entrance().rules.value, 0);
       expect(entrance().ink.value, 0);
@@ -75,6 +84,84 @@ void main() {
       );
     },
   );
+
+  for (final size in [
+    const Size(320, 568),
+    const Size(360, 640),
+    const Size(390, 844),
+  ]) {
+    testWidgets(
+      'fits eight aligned word rows on a ${size.width}×${size.height} screen',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        tester.view.padding = FakeViewPadding(
+          top: 24,
+          bottom: size.width == 320 ? 48 : 24,
+        );
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPadding);
+        _seedCollection(16, sourceLanguage: 'en');
+        await tester.pumpWidget(_collectionWithTestTranslator());
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 2'), findsOneWidget);
+        await tester.tap(find.byTooltip('Previous page'));
+        await tester.pumpAndSettle();
+        expect(find.text('1 / 2'), findsOneWidget);
+
+        final viewport = tester.getRect(find.byType(ReorderableList));
+        double? menuX;
+        for (var index = 0; index < 8; index++) {
+          final row = find.byWidgetPredicate(
+            (widget) => widget is WordRow && widget.entry.id == '$index',
+          );
+          final menu = find.byTooltip('Options for word $index').hitTestable();
+          final rowRect = tester.getRect(row);
+          expect(rowRect.top, greaterThanOrEqualTo(viewport.top - 0.1));
+          expect(rowRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.1));
+          expect(menu, findsOneWidget);
+          menuX ??= tester.getCenter(menu).dx;
+          expect(tester.getCenter(menu).dx, menuX);
+          expect(
+            find.descendant(of: menu, matching: find.byIcon(Icons.more_horiz)),
+            findsOneWidget,
+          );
+        }
+        expect(find.text('word 8').hitTestable(), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('keeps the same eight-word page after the keyboard closes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 760);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    _seedCollection(24, sourceLanguage: 'en');
+    await tester.pumpWidget(_collectionWithTestTranslator());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Previous page'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 295);
+    await tester.pumpAndSettle();
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    for (var index = 8; index < 16; index++) {
+      expect(
+        find.byTooltip('Options for word $index').hitTestable(),
+        findsOneWidget,
+      );
+    }
+    expect(find.text('word 7').hitTestable(), findsNothing);
+    expect(find.text('word 16').hitTestable(), findsNothing);
+  });
 
   testWidgets(
     'edits a word and translation and removes entries through the menu',
@@ -156,8 +243,39 @@ void main() {
     },
   );
 
+  testWidgets('holding a covered blank area starts a saved reorder', (
+    tester,
+  ) async {
+    _seedCollection(3);
+    await tester.pumpWidget(_collectionWithTestTranslator());
+    await tester.pumpAndSettle();
+    final row = tester.getRect(find.byType(WordRow).first);
+    final blank = Offset(row.right - 25, row.center.dy);
+    final next = tester.getCenter(find.text('answer 1'));
+    final drag = await tester.startGesture(blank);
+    await tester.pump(const Duration(milliseconds: 1500));
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Material && widget.elevation == 4,
+      ),
+      findsOneWidget,
+    );
+    for (var y = blank.dy + 8; y <= next.dy + row.height / 2; y += 8) {
+      await drag.moveTo(Offset(blank.dx, y));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect((await WordRepository().loadWords()).map((entry) => entry.id), [
+      '1',
+      '0',
+      '2',
+    ]);
+    expect(find.text('Edit translation'), findsNothing);
+  });
+
   testWidgets('can drag a word over a page boundary', (tester) async {
-    tester.view.physicalSize = const Size(410, 1130);
+    tester.view.physicalSize = const Size(390, 760);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -169,18 +287,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 / 2'), findsOneWidget);
 
+    final list = tester.widget<ReorderableList>(find.byType(ReorderableList));
+    final viewport = tester.getRect(find.byType(ReorderableList));
     final from = tester.getCenter(find.text('word 7'));
-    final after = tester.getCenter(find.text('word 8'));
     final drag = await tester.startGesture(from);
     await tester.pump(const Duration(milliseconds: 1500));
-    await drag.moveTo(after - const Offset(0, 10));
-    await tester.pump();
+    await drag.moveTo(Offset(from.dx, viewport.bottom + 10));
+    for (
+      var frame = 0;
+      frame < 64 && list.controller!.offset < list.itemExtent! * 1.45;
+      frame++
+    ) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(list.controller!.offset, greaterThan(list.itemExtent!));
     await drag.up();
     await tester.pumpAndSettle();
     final order = (await WordRepository().loadWords())
         .map((entry) => entry.id)
         .toList();
-    expect(order.sublist(6), ['6', '8', '7', '9']);
+    expect(order.indexOf('7'), greaterThan(order.indexOf('8')));
   });
 
   testWidgets('adds a known word and fades its translation', (
@@ -236,10 +362,12 @@ void main() {
 
     expect(translationOpacity().opacity, 0);
     await tester.drag(find.byType(ScratchTranslation), const Offset(180, 0));
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(translationOpacity().opacity, 1);
 
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 4990));
+    expect(translationOpacity().opacity, 1);
+    await tester.pump(const Duration(milliseconds: 10));
     await tester.pump(const Duration(milliseconds: 700));
     expect(translationOpacity().opacity, 0);
   });
@@ -402,6 +530,7 @@ void main() {
       var hold = await tester.startGesture(tester.getCenter(translation));
       await tester.pump(const Duration(seconds: 2));
       await hold.up();
+      await tester.pumpAndSettle();
       expect(find.text('Edit translation'), findsNothing);
 
       await tester.drag(translation, const Offset(180, 0));
@@ -507,7 +636,7 @@ Widget _collectionWithResult(TranslationResult result) => MaterialApp(
   home: CollectionScreen(translationService: _TestTranslator(result)),
 );
 
-void _seedCollection(int count) {
+void _seedCollection(int count, {String? sourceLanguage}) {
   SharedPreferences.setMockInitialValues({
     'word_entries_v1': jsonEncode([
       for (var index = 0; index < count; index++)
@@ -515,6 +644,7 @@ void _seedCollection(int count) {
           id: '$index',
           word: 'word $index',
           translation: 'answer $index',
+          sourceLanguage: sourceLanguage,
           createdAt: DateTime(2020),
         ).toJson(),
     ]),

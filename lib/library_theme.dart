@@ -127,35 +127,62 @@ class LibraryHeading extends StatelessWidget {
     required this.title,
     required this.leading,
     required this.detail,
+    this.compact = false,
   });
 
   final String title;
   final Widget leading;
   final String detail;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context).textTheme.headlineMedium;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 9, 16, 0),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(9, 5, 12, 0)
+          : const EdgeInsets.fromLTRB(16, 9, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          LibraryInk(
-            child: Row(
-              children: [
-                leading,
-                const SizedBox(width: 8),
-                Expanded(child: Text(detail, style: libraryLabel)),
-              ],
+          if (compact)
+            LibraryInk(
+              child: Row(
+                children: [
+                  leading,
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            title,
+                            style: titleStyle?.copyWith(fontSize: 25),
+                          ),
+                        ),
+                        Text(detail, style: libraryLabel.copyWith(fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            LibraryInk(
+              child: Row(
+                children: [
+                  leading,
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(detail, style: libraryLabel)),
+                ],
+              ),
             ),
-          ),
-          LibraryInk(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ),
-          const SizedBox(height: 12),
+            LibraryInk(child: Text(title, style: titleStyle)),
+          ],
+          SizedBox(height: compact ? 4 : 12),
           const LibraryRuleLine(height: 3, thickness: 2, color: libraryInk),
           const SizedBox(height: 2),
           const LibraryRuleLine(),

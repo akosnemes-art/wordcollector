@@ -10,6 +10,7 @@ class WordRow extends StatelessWidget {
     super.key,
     required this.entry,
     required this.index,
+    required this.height,
     required this.enabled,
     required this.onEditWord,
     required this.onEditTranslation,
@@ -18,31 +19,55 @@ class WordRow extends StatelessWidget {
 
   final WordEntry entry;
   final int index;
+  final double height;
   final bool enabled;
   final VoidCallback onEditWord;
   final VoidCallback onEditTranslation;
   final VoidCallback onDelete;
 
-  static const menuWidth = 48.0;
+  static const menuWidth = 44.0;
+  static const _languageSize = 9.0;
+  static const _compactSize = 15.0;
+  static const _regularSize = 17.0;
+
+  static double minimumHeight(TextScaler scale) =>
+      (scale.scale(_compactSize) * 1.16 + scale.scale(_languageSize) * 1.12 + 5)
+          .clamp(32.0, double.infinity);
 
   @override
   Widget build(BuildContext context) {
     final language = entry.sourceLanguage;
+    final scale = MediaQuery.textScalerOf(context);
+    final expanded =
+        height >=
+        2 * scale.scale(_regularSize) * 1.16 +
+            scale.scale(_languageSize) * 1.12 +
+            9;
+    final fontSize = expanded ? _regularSize : _compactSize;
+
+    Widget dragTarget(Widget child, bool available) => _WordDragHandle(
+      index: index,
+      enabled: enabled && available,
+      child: child,
+    );
+
     return DecoratedBox(
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: libraryRule)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 7),
         child: ScratchTranslation(
           translation: entry.translation,
           createdAt: entry.createdAt,
           onEdit: enabled ? onEditTranslation : null,
+          dragTarget: dragTarget,
+          compact: !expanded,
           word: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
                 width: menuWidth,
-                height: 48,
                 child: PopupMenuButton<_WordAction>(
                   enabled: enabled,
                   tooltip: 'Options for ${entry.word}',
@@ -69,36 +94,37 @@ class WordRow extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: _WordDragHandle(
-                  index: index,
-                  enabled: enabled,
-                  child: Container(
+                child: dragTarget(
+                  Container(
                     color: Colors.transparent,
                     alignment: Alignment.centerLeft,
-                    constraints: const BoxConstraints(minHeight: 42),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           entry.word,
-                          maxLines: 2,
+                          maxLines: expanded ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: librarySerif,
-                            fontSize: 19,
-                            height: 1.18,
+                            fontSize: fontSize,
+                            height: 1.16,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         if (language != null)
                           Text(
                             language.toUpperCase(),
-                            style: libraryLabel.copyWith(height: 1.2),
+                            style: libraryLabel.copyWith(
+                              fontSize: _languageSize,
+                              height: 1.12,
+                            ),
                           ),
                       ],
                     ),
                   ),
+                  true,
                 ),
               ),
             ],

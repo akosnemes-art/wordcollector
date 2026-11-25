@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_info.dart';
 import '../library_theme.dart';
+import 'credit_floral_frame.dart';
 
 class LaunchSequence extends StatefulWidget {
   const LaunchSequence({super.key, required this.child});
@@ -26,6 +29,9 @@ class _LaunchSequenceState extends State<LaunchSequence>
   late final Animation<double> _splashOpacity = _timeline
       .drive(CurveTween(curve: const Interval(_splashEnds, _splashFadeEnds)))
       .drive(Tween<double>(begin: 1, end: 0));
+  late final Animation<double> _flowers = _timeline.drive(
+    CurveTween(curve: const Interval(120 / 4450, 2700 / 4450)),
+  );
   late final Animation<double> _rules = _timeline.drive(
     CurveTween(
       curve: const Interval(
@@ -76,7 +82,9 @@ class _LaunchSequenceState extends State<LaunchSequence>
                 opacity: reduceMotion
                     ? kAlwaysCompleteAnimation
                     : _splashOpacity,
-                child: const _DesignerSplash(),
+                child: _DesignerSplash(
+                  growth: reduceMotion ? kAlwaysCompleteAnimation : _flowers,
+                ),
               ),
           ],
         );
@@ -86,10 +94,13 @@ class _LaunchSequenceState extends State<LaunchSequence>
 }
 
 class _DesignerSplash extends StatelessWidget {
-  const _DesignerSplash();
+  const _DesignerSplash({required this.growth});
+
+  final Animation<double> growth;
 
   @override
   Widget build(BuildContext context) {
+    final caption = libraryLabel.copyWith(fontFamily: librarySerif);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -103,30 +114,40 @@ class _DesignerSplash extends StatelessWidget {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Designed by', style: libraryLabel),
-                  const SizedBox(height: 8),
-                  Text(
-                    designerName,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium!
-                        .copyWith(fontSize: 42),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: CreditFloralFrame(
+                growth: growth,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Designed by', style: caption),
+                      const SizedBox(height: 8),
+                      Text(
+                        designerName,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium!
+                            .copyWith(
+                              fontSize: math.min(
+                                42,
+                                constraints.maxWidth * 0.174,
+                              ),
+                            ),
+                      ),
+                      const SizedBox(height: 13),
+                      const SizedBox(
+                        width: 52,
+                        child: Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: libraryAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('Version $appVersion', style: caption),
+                    ],
                   ),
-                  const SizedBox(height: 13),
-                  const SizedBox(
-                    width: 52,
-                    child: Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: libraryAccent,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Version $appVersion', style: libraryLabel),
-                ],
+                ),
               ),
             ),
           ),
