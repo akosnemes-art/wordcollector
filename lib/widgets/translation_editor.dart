@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/translation_service.dart';
 
+typedef WordEdits = ({String word, String translation});
+
 class TranslationEditor extends StatefulWidget {
   const TranslationEditor({
     super.key,
@@ -10,6 +12,7 @@ class TranslationEditor extends StatefulWidget {
     required this.sourceLanguage,
     required this.allowDirectionChange,
     required this.service,
+    this.editWord = false,
   });
 
   final String word;
@@ -17,6 +20,7 @@ class TranslationEditor extends StatefulWidget {
   final String sourceLanguage;
   final bool allowDirectionChange;
   final TranslationService service;
+  final bool editWord;
 
   @override
   State<TranslationEditor> createState() => _TranslationEditorState();
@@ -24,6 +28,7 @@ class TranslationEditor extends StatefulWidget {
 
 class _TranslationEditorState extends State<TranslationEditor> {
   final _formKey = GlobalKey<FormState>();
+  late final _wordInput = TextEditingController(text: widget.word);
   late final _input = TextEditingController(text: widget.translation);
   late var _source = widget.sourceLanguage;
   bool _lookingUp = false;
@@ -32,17 +37,26 @@ class _TranslationEditorState extends State<TranslationEditor> {
 
   @override
   void dispose() {
+    _wordInput.dispose();
     _input.dispose();
     super.dispose();
   }
 
   void _save() {
     if (_formKey.currentState!.validate()) {
-      Navigator.pop(context, _input.text.trim());
+      Navigator.pop(context, (
+        word: _wordInput.text.trim(),
+        translation: _input.text.trim(),
+      ));
     }
   }
 
   Future<void> _lookUp() async {
+    final word = _wordInput.text.trim();
+    if (word.isEmpty) {
+      _formKey.currentState!.validate();
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() {
       _lookingUp = true;
@@ -51,7 +65,7 @@ class _TranslationEditorState extends State<TranslationEditor> {
     });
     try {
       final result = await widget.service.translate(
-        widget.word,
+        word,
         sourceLanguage: _source,
         targetLanguage: _source == 'hu' ? 'en' : 'hu',
       );
@@ -69,18 +83,42 @@ class _TranslationEditorState extends State<TranslationEditor> {
   Widget build(BuildContext context) {
     return AlertDialog(
       scrollable: true,
-      title: const Text('Edit translation'),
+      title: Text(widget.editWord ? 'Edit word' : 'Edit translation'),
       content: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.editWord) ...[
+              TextFormField(
+                autofocus: true,
+                controller: _wordInput,
+                readOnly: _lookingUp,
+                autocorrect: false,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Word'),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter a word.'
+                    : null,
+                onChanged: (_) {
+                  if (_alternatives.isEmpty && _lookupError == null) return;
+                  setState(() {
+                    _alternatives = const [];
+                    _lookupError = null;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
             TextFormField(
-              autofocus: true,
+              autofocus: !widget.editWord,
+              readOnly: _lookingUp,
               controller: _input,
               textInputAction: TextInputAction.done,
-              decoration: InputDecoration(labelText: widget.word),
+              decoration: InputDecoration(
+                labelText: widget.editWord ? 'Translation' : widget.word,
+              ),
               onFieldSubmitted: (_) => _save(),
               validator: (value) => value == null || value.trim().isEmpty
                   ? 'Enter a translation.'

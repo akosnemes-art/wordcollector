@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'library_theme.dart';
 import 'screens/collection_screen.dart';
+import 'widgets/launch_sequence.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +18,7 @@ class WordCollectorApp extends StatelessWidget {
       title: 'Word Collector',
       debugShowCheckedModeBanner: false,
       theme: libraryTheme(),
-      home: const CollectionScreen(),
+      home: const LaunchSequence(child: CollectionScreen()),
     );
   }
 }

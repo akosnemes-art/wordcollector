@@ -171,6 +171,7 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
                         color: libraryAccent,
                         fontFamily: librarySerif,
                         fontSize: 17,
+                        height: 1.2,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -182,36 +183,38 @@ class _ScratchTranslationState extends State<ScratchTranslation> {
         ),
       ),
     );
-    final word = widget.word;
-    final row = word == null
+    final field = widget.onEdit == null
         ? translation
+        : RawGestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            gestures: {
+              LongPressGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    LongPressGestureRecognizer
+                  >(() => LongPressGestureRecognizer(duration: _editHoldTime), (
+                    recognizer,
+                  ) {
+                    recognizer.onLongPressDown = _beginHold;
+                    recognizer.onLongPressCancel = _cancelHold;
+                    recognizer.onLongPress = () {
+                      if (!_holdingVisibleWord) return;
+                      _holdingVisibleWord = false;
+                      _editVisibleWord();
+                    };
+                  }),
+            },
+            child: translation,
+          );
+    final word = widget.word;
+    return word == null
+        ? field
         : Row(
             children: [
               Expanded(child: word),
               const SizedBox(width: 12),
-              Expanded(child: translation),
+              Expanded(child: field),
             ],
           );
-    if (widget.onEdit == null) return row;
-    return RawGestureDetector(
-      behavior: HitTestBehavior.opaque,
-      excludeFromSemantics: true,
-      gestures: {
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () => LongPressGestureRecognizer(duration: _editHoldTime),
-              (recognizer) {
-                recognizer.onLongPressDown = _beginHold;
-                recognizer.onLongPressCancel = _cancelHold;
-                recognizer.onLongPress = () {
-                  if (!_holdingVisibleWord) return;
-                  _holdingVisibleWord = false;
-                  _editVisibleWord();
-                };
-              },
-            ),
-      },
-      child: row,
-    );
   }
 }

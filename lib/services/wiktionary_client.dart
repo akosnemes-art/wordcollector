@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../app_info.dart';
+
 class WiktionaryClient {
   const WiktionaryClient();
 
   static const _timeout = Duration(milliseconds: 2500);
   static const _userAgent =
-      'WordCollector/0.1.2 (https://github.com/akosnemes-art/wordcollector)';
+      'WordCollector/$appVersion (https://github.com/akosnemes-art/wordcollector)';
   static const _datedTags = {
     'abbreviation',
     'alt-of',

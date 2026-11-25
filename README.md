@@ -15,9 +15,11 @@ keeps your collection on your device in the order you saved it.
   Wiktapi’s live Wiktionary API and uses its bundled dictionaries if the lookup
   is unavailable or has no matching entry.
 - A new translation stays visible for five seconds. Rub the translation area
-  to reveal it again, then hold the word or its visible translation for two
-  seconds to edit it. Use **Look up translation** to refresh an old translation
-  or see other meanings in the editor before saving.
+  to reveal it again, then hold the translation for two seconds to edit it.
+  Use **Look up translation** to refresh it or see other meanings in the editor.
+- Use the three-dot menu beside a word to edit its spelling or translation, or
+  delete it from your collection. Hold the word for 1.5 seconds and drag it to
+  change its saved order. The page arrows jump through the collection.
 - Open **Practice mode** in the side menu to type translations from a shuffled
   copy of your collection. Three wrong answers on a word restart the round.
   You can reveal one answer per eight collected words, rounded up. Asking for

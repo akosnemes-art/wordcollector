@@ -19,13 +19,14 @@ class WordEntry {
     _ => null,
   };
 
-  WordEntry withTranslation(String value) => WordEntry(
-    id: id,
-    word: word,
-    translation: value,
-    createdAt: createdAt,
-    sourceLanguage: sourceLanguage,
-  );
+  WordEntry withEdits({required String word, required String translation}) =>
+      WordEntry(
+        id: id,
+        word: word,
+        translation: translation,
+        createdAt: createdAt,
+        sourceLanguage: sourceLanguage,
+      );
 
   Map<String, Object> toJson() => {
     'id': id,

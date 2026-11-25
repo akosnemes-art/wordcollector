@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wordcollector/app_info.dart';
 import 'package:wordcollector/library_theme.dart';
 import 'package:wordcollector/main.dart';
 import 'package:wordcollector/models/word_entry.dart';
@@ -30,6 +31,156 @@ void main() {
 
     expect(find.text('Translation direction'), findsOneWidget);
     expect(find.text('Hungarian → English'), findsOneWidget);
+  });
+
+  testWidgets(
+    'launch holds the credit, draws rules and then fades in the library',
+    (tester) async {
+      await tester.pumpWidget(const WordCollectorApp());
+      final splash = find.byKey(const ValueKey('designer-splash'));
+      expect(
+        tester.getSize(splash),
+        tester.view.physicalSize / tester.view.devicePixelRatio,
+      );
+      LibraryEntrance entrance() =>
+          tester.widget<LibraryEntrance>(find.byType(LibraryEntrance));
+
+      expect(
+        find.descendant(of: splash, matching: find.text(designerName)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: splash, matching: find.text('Version $appVersion')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 2990));
+      expect(splash, findsOneWidget);
+      expect(entrance().rules.value, 0);
+      expect(entrance().ink.value, 0);
+
+      await tester.pump(const Duration(milliseconds: 670));
+      expect(splash, findsNothing);
+      expect(entrance().rules.value, inExclusiveRange(0, 1));
+      expect(entrance().ink.value, 0);
+      await tester.pump(const Duration(milliseconds: 540));
+      expect(entrance().rules.value, 1);
+      expect(entrance().ink.value, inExclusiveRange(0, 1));
+
+      await tester.pumpAndSettle();
+      final version = find.text('Version $appVersion');
+      expect(version, findsOneWidget);
+      expect(
+        tester.getTopLeft(version).dy,
+        greaterThan(tester.getBottomLeft(find.byType(TextField)).dy),
+      );
+    },
+  );
+
+  testWidgets(
+    'edits a word and translation and removes entries through the menu',
+    (tester) async {
+      _seedCollection(2);
+      await tester.pumpWidget(_collectionWithTestTranslator());
+      await tester.pumpAndSettle();
+      final options = find.byTooltip('Options for word 0');
+      expect(
+        tester.getCenter(options).dx,
+        lessThan(tester.getCenter(find.text('word 0')).dx),
+      );
+      await tester.tap(options);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit word'));
+      await tester.pumpAndSettle();
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), 'corrected word');
+      await tester.enterText(fields.at(1), 'corrected translation');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      final entries = await WordRepository().loadWords();
+      expect(entries.first.id, '0');
+      expect(entries.first.word, 'corrected word');
+      expect(entries.first.translation, 'corrected translation');
+
+      await tester.tap(find.byTooltip('Options for word 1'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete word'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('word 1'), findsNothing);
+      expect((await WordRepository().loadWords()).map((entry) => entry.id), [
+        '0',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'starts a saved reorder only after holding a word for 1.5 seconds',
+    (tester) async {
+      _seedCollection(3);
+      await tester.pumpWidget(_collectionWithTestTranslator());
+      await tester.pumpAndSettle();
+
+      final first = find.text('word 0');
+      final next = tester.getCenter(find.text('word 1'));
+      final last = tester.getCenter(find.text('word 2'));
+      var hold = await tester.startGesture(tester.getCenter(first));
+      await tester.pump(const Duration(milliseconds: 1490));
+      await hold.moveTo(next);
+      await hold.up();
+      await tester.pumpAndSettle();
+      expect((await WordRepository().loadWords()).map((entry) => entry.id), [
+        '0',
+        '1',
+        '2',
+      ]);
+
+      hold = await tester.startGesture(tester.getCenter(first));
+      await tester.pump(const Duration(milliseconds: 1500));
+      await hold.moveTo(next);
+      await tester.pump(const Duration(milliseconds: 100));
+      await hold.moveTo(last + const Offset(0, 25));
+      await tester.pump(const Duration(milliseconds: 100));
+      await hold.up();
+      await tester.pumpAndSettle();
+      expect(find.text('Edit translation'), findsNothing);
+      expect((await WordRepository().loadWords()).map((entry) => entry.id), [
+        '1',
+        '0',
+        '2',
+      ]);
+      expect(
+        tester.getCenter(first).dy,
+        greaterThan(tester.getCenter(find.text('word 1')).dy),
+      );
+    },
+  );
+
+  testWidgets('can drag a word over a page boundary', (tester) async {
+    tester.view.physicalSize = const Size(410, 1130);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    _seedCollection(10);
+    await tester.pumpWidget(_collectionWithTestTranslator());
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 2'), findsOneWidget);
+    await tester.tap(find.byTooltip('Previous page'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
+
+    final from = tester.getCenter(find.text('word 7'));
+    final after = tester.getCenter(find.text('word 8'));
+    final drag = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 1500));
+    await drag.moveTo(after - const Offset(0, 10));
+    await tester.pump();
+    await drag.up();
+    await tester.pumpAndSettle();
+    final order = (await WordRepository().loadWords())
+        .map((entry) => entry.id)
+        .toList();
+    expect(order.sublist(6), ['6', '8', '7', '9']);
   });
 
   testWidgets('adds a known word and fades its translation', (
@@ -221,7 +372,7 @@ void main() {
     await tester.drag(find.text('answer 0'), const Offset(180, 0));
     await tester.pumpAndSettle();
     final hold = await tester.startGesture(
-      tester.getCenter(find.text('word 0')),
+      tester.getCenter(find.text('answer 0')),
     );
     await tester.pump(const Duration(seconds: 2));
     await hold.up();
@@ -240,39 +391,39 @@ void main() {
     expect(entry.translation, 'another meaning');
   });
 
-  testWidgets('only a two-second hold on a revealed word edits and saves it', (
-    tester,
-  ) async {
-    _seedCollection(1);
-    await tester.pumpWidget(_collectionWithTestTranslator());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'only a two-second hold on a visible translation edits and saves it',
+    (tester) async {
+      _seedCollection(1);
+      await tester.pumpWidget(_collectionWithTestTranslator());
+      await tester.pumpAndSettle();
 
-    final word = find.text('word 0');
-    var hold = await tester.startGesture(tester.getCenter(word));
-    await tester.pump(const Duration(seconds: 2));
-    await hold.up();
-    expect(find.text('Edit translation'), findsNothing);
+      final translation = find.text('answer 0');
+      var hold = await tester.startGesture(tester.getCenter(translation));
+      await tester.pump(const Duration(seconds: 2));
+      await hold.up();
+      expect(find.text('Edit translation'), findsNothing);
 
-    final translation = find.text('answer 0');
-    await tester.drag(translation, const Offset(180, 0));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(seconds: 1));
-    hold = await tester.startGesture(tester.getCenter(word));
-    await tester.pump(const Duration(milliseconds: 1900));
-    expect(find.text('Edit translation'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 100));
-    await hold.up();
-    await tester.pumpAndSettle();
+      await tester.drag(translation, const Offset(180, 0));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      hold = await tester.startGesture(tester.getCenter(translation));
+      await tester.pump(const Duration(milliseconds: 1900));
+      expect(find.text('Edit translation'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 100));
+      await hold.up();
+      await tester.pumpAndSettle();
 
-    expect(find.text('Edit translation'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField), 'new answer');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-    final saved = (await WordRepository().loadWords()).single;
-    expect(saved.word, 'word 0');
-    expect(saved.translation, 'new answer');
-    expect(saved.sourceLanguage, isNull);
-  });
+      expect(find.text('Edit translation'), findsOneWidget);
+      await tester.enterText(find.byType(TextFormField), 'new answer');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      final saved = (await WordRepository().loadWords()).single;
+      expect(saved.word, 'word 0');
+      expect(saved.translation, 'new answer');
+      expect(saved.sourceLanguage, isNull);
+    },
+  );
 
   testWidgets(
     'practice reshuffles after three mistakes and restores saved order',

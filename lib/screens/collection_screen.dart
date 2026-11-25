@@ -26,11 +26,14 @@ class _CollectionScreenState extends State<CollectionScreen> {
   late final WordRepository _repository;
   late final TranslationService _translationService;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _listKey = GlobalKey<ReorderableListState>();
+  final _scroll = ScrollController(keepScrollOffset: false);
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
 
   List<WordEntry> _words = [];
   int _page = 0;
+  double _rowExtent = 76;
   String _sourceLanguage = 'hu';
   bool _loading = true;
   bool _translating = false;
@@ -49,6 +52,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     _repository = widget.repository ?? WordRepository();
     _translationService =
         widget.translationService ?? HybridTranslationService();
+    _scroll.addListener(_syncPage);
     _load();
   }
 
@@ -62,10 +66,58 @@ class _CollectionScreenState extends State<CollectionScreen> {
       _page = _pageCount - 1;
       _loading = false;
     });
+    _jumpAfterLayout(_page);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scale = MediaQuery.textScalerOf(context);
+    _rowExtent = math.max(
+      76,
+      math.max(
+        2.36 * scale.scale(19) + 1.2 * scale.scale(11) + 17,
+        2.4 * scale.scale(17) + 30,
+      ),
+    );
+  }
+
+  void _syncPage() {
+    if (!_scroll.hasClients || !_scroll.position.hasContentDimensions) return;
+    final page = ((_scroll.offset + 0.5) ~/ (_rowExtent * _wordsPerPage)).clamp(
+      0,
+      _pageCount - 1,
+    );
+    if (page != _page) setState(() => _page = page);
+  }
+
+  void _jumpAfterLayout(int page) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scroll.hasClients) _goToPage(page, jump: true);
+    });
+  }
+
+  void _goToPage(int page, {bool jump = false}) {
+    if (!_scroll.hasClients) return;
+    final offset = (page * _wordsPerPage * _rowExtent).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
+    if (jump) {
+      _scroll.jumpTo(offset);
+    } else {
+      _listKey.currentState?.cancelReorder();
+      _scroll.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _scroll.dispose();
     _input.dispose();
     _inputFocus.dispose();
     super.dispose();
@@ -84,8 +136,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
       if (!mounted) return false;
       setState(() {
         _words = words;
-        _page = page ?? _page;
+        _page = math.min(page ?? _page, _pageCount - 1);
       });
+      if (page != null) _jumpAfterLayout(_page);
       return true;
     } on Exception {
       if (mounted) _showMessage('Could not save your collection. Try again.');
@@ -98,6 +151,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
   Future<void> _addWord() async {
     final word = _input.text.trim();
     if (word.isEmpty || _busy) return;
+    _listKey.currentState?.cancelReorder();
     setState(() => _translating = true);
     try {
       final source = _sourceLanguage;
@@ -127,9 +181,10 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  Future<void> _editTranslation(WordEntry entry) async {
+  Future<void> _editWord(WordEntry entry, {required bool editWord}) async {
     if (_busy) return;
-    final result = await showDialog<String>(
+    _listKey.currentState?.cancelReorder();
+    final result = await showDialog<WordEdits>(
       context: context,
       builder: (context) => TranslationEditor(
         word: entry.word,
@@ -137,13 +192,51 @@ class _CollectionScreenState extends State<CollectionScreen> {
         sourceLanguage: entry.sourceLanguage ?? _sourceLanguage,
         allowDirectionChange: entry.sourceLanguage == null,
         service: _translationService,
+        editWord: editWord,
       ),
     );
-    if (!mounted || result == null || result == entry.translation) return;
+    if (!mounted ||
+        result == null ||
+        (result.word == entry.word &&
+            result.translation == entry.translation)) {
+      return;
+    }
     await _saveCollection([
       for (final word in _words)
-        word.id == entry.id ? word.withTranslation(result) : word,
+        word.id == entry.id
+            ? word.withEdits(word: result.word, translation: result.translation)
+            : word,
     ]);
+  }
+
+  Future<void> _deleteWord(WordEntry entry) async {
+    if (_busy) return;
+    _listKey.currentState?.cancelReorder();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete “${entry.word}”?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _saveCollection(_words.where((word) => word.id != entry.id).toList());
+  }
+
+  void _reorderWords(int from, int to) {
+    if (_busy || from == to) return;
+    final words = List.of(_words);
+    words.insert(to, words.removeAt(from));
+    _saveCollection(words);
   }
 
   Future<void> _swapLanguages() async {
@@ -156,6 +249,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
   Future<void> _clearWords() async {
     if (_busy) return;
+    _listKey.currentState?.cancelReorder();
     Navigator.pop(context);
     final clear = await showDialog<bool>(
       context: context,
@@ -179,6 +273,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
   Future<void> _startPractice() async {
     if (_busy || _words.isEmpty) return;
+    _listKey.currentState?.cancelReorder();
     _inputFocus.unfocus();
     Navigator.pop(context);
     final completed = await Navigator.push<bool>(
@@ -197,9 +292,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
         title: const Text('How it works'),
         content: const Text(
           'New translations stay visible for five seconds. Rub across a '
-          'hidden translation to reveal it. While it is visible, hold the '
-          'word or translation for two seconds to edit it or look up other '
-          'meanings.\n\n'
+          'hidden translation to reveal it. Hold a visible translation for '
+          'two seconds to edit it. Tap the three dots to edit the word or '
+          'delete it. Hold a word for 1.5 seconds and drag to reorder it.\n\n'
           'In Practice mode, type each translation. A round restarts after '
           'three mistakes on one word or if you exceed your reveal allowance. '
           'You get one reveal per eight words, rounded up.\n\n'
@@ -244,7 +339,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
                 ),
                 Expanded(
                   child: _loading
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const LibraryInk(
+                          child: Center(child: CircularProgressIndicator()),
+                        )
                       : _buildPage(compact),
                 ),
                 _buildInput(),
@@ -257,92 +354,118 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _buildPage(bool compact) {
-    final start = _page * _wordsPerPage;
-    final count = math.min(_wordsPerPage, _words.length - start);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
           if (!compact)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _words.length == 1
-                          ? '1 saved word'
-                          : '${_words.length} saved words',
-                      style: Theme.of(context).textTheme.bodyMedium,
+            LibraryInk(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _words.length == 1
+                            ? '1 saved word'
+                            : '${_words.length} saved words',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ),
-                  ),
-                  if (count > 0)
-                    const Row(
-                      children: [
-                        Icon(Icons.gesture, size: 16, color: libraryMuted),
-                        SizedBox(width: 5),
-                        Text('Rub to reveal', style: libraryLabel),
-                      ],
-                    ),
-                ],
+                    if (_words.isNotEmpty)
+                      const Row(
+                        children: [
+                          Icon(Icons.gesture, size: 16, color: libraryMuted),
+                          SizedBox(width: 5),
+                          Text('Rub to reveal', style: libraryLabel),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ),
           Expanded(
-            child: count == 0
+            child: _words.isEmpty
                 ? const _EmptyCollection()
-                : DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: libraryRule),
-                    ),
+                : LibraryFrame(
                     child: Column(
                       children: [
                         if (!compact) ...[
-                          const Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 9,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text('WORD', style: libraryLabel),
-                                ),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'TRANSLATION',
-                                    style: libraryLabel,
+                          const LibraryInk(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 9,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        left: WordRow.menuWidth,
+                                      ),
+                                      child: Text('WORD', style: libraryLabel),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'TRANSLATION',
+                                      style: libraryLabel,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          const Divider(height: 1),
+                          const LibraryRuleLine(),
                         ],
-                        Expanded(
-                          child: ListView.separated(
-                            key: PageStorageKey(_page),
-                            padding: EdgeInsets.zero,
-                            itemCount: count,
-                            separatorBuilder: (_, _) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final entry = _words[start + index];
-                              return WordRow(
-                                key: ValueKey(entry.id),
-                                entry: entry,
-                                onEdit: () => _editTranslation(entry),
-                              );
-                            },
-                          ),
-                        ),
+                        Expanded(child: LibraryInk(child: _buildWordList())),
                       ],
                     ),
                   ),
           ),
-          if (!compact || _pageCount > 1) _buildPagination(),
+          if (!compact || _pageCount > 1) LibraryInk(child: _buildPagination()),
         ],
       ),
+    );
+  }
+
+  Widget _buildWordList() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wordsOnLastPage =
+            _words.length - (_pageCount - 1) * _wordsPerPage;
+        // Leave room to scroll the last group of words to the top of the list.
+        final endPadding = _pageCount > 1
+            ? math.max(
+                0.0,
+                constraints.maxHeight - wordsOnLastPage * _rowExtent,
+              )
+            : 0.0;
+        return ReorderableList(
+          key: _listKey,
+          controller: _scroll,
+          itemCount: _words.length,
+          itemExtent: _rowExtent,
+          padding: EdgeInsets.only(bottom: endPadding),
+          onReorderItem: _reorderWords,
+          proxyDecorator: (child, _, _) =>
+              Material(color: libraryPaper, elevation: 4, child: child),
+          itemBuilder: (context, index) {
+            final entry = _words[index];
+            return WordRow(
+              key: ValueKey(entry.id),
+              entry: entry,
+              index: index,
+              enabled: !_busy,
+              onEditWord: () => _editWord(entry, editWord: true),
+              onEditTranslation: () => _editWord(entry, editWord: false),
+              onDelete: () => _deleteWord(entry),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -352,15 +475,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
       children: [
         IconButton(
           tooltip: 'Previous page',
-          onPressed: _page > 0 ? () => setState(() => _page--) : null,
+          onPressed: _page > 0 ? () => _goToPage(_page - 1) : null,
           icon: const Icon(Icons.arrow_back),
         ),
         Text('${_page + 1} / $_pageCount', style: libraryLabel),
         IconButton(
           tooltip: 'Next page',
-          onPressed: _page < _pageCount - 1
-              ? () => setState(() => _page++)
-              : null,
+          onPressed: _page < _pageCount - 1 ? () => _goToPage(_page + 1) : null,
           icon: const Icon(Icons.arrow_forward),
         ),
       ],
@@ -369,32 +490,38 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
   Widget _buildInput() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-      child: TextField(
-        controller: _input,
-        focusNode: _inputFocus,
-        enabled: !_loading,
-        readOnly: _busy,
-        textInputAction: TextInputAction.done,
-        autocorrect: false,
-        onSubmitted: (_) => _addWord(),
-        decoration: InputDecoration(
-          hintText: _translating
-              ? 'Looking up word…'
-              : 'Add ${_sourceLanguage == 'hu' ? 'a Hungarian' : 'an English'} word…',
-          suffixIcon: _translating
-              ? const Padding(
-                  padding: EdgeInsets.all(13),
-                  child: SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : IconButton(
-                  tooltip: 'Add word',
-                  onPressed: _busy ? null : _addWord,
-                  icon: const Icon(Icons.add),
-                ),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      child: LibraryFrame(
+        child: LibraryInk(
+          child: TextField(
+            controller: _input,
+            focusNode: _inputFocus,
+            enabled: !_loading,
+            readOnly: _busy,
+            textInputAction: TextInputAction.done,
+            autocorrect: false,
+            onSubmitted: (_) => _addWord(),
+            decoration: InputDecoration(
+              enabledBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+              hintText: _translating
+                  ? 'Looking up word…'
+                  : 'Add ${_sourceLanguage == 'hu' ? 'a Hungarian' : 'an English'} word…',
+              suffixIcon: _translating
+                  ? const Padding(
+                      padding: EdgeInsets.all(13),
+                      child: SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      tooltip: 'Add word',
+                      onPressed: _busy ? null : _addWord,
+                      icon: const Icon(Icons.add),
+                    ),
+            ),
+          ),
         ),
       ),
     );
@@ -447,10 +574,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
                 onTap: _clearWords,
               ),
             ],
-            const Padding(
-              padding: EdgeInsets.fromLTRB(14, 16, 14, 12),
-              child: Text('Version 0.1.2', style: libraryLabel),
-            ),
           ],
         ),
       ),
@@ -466,29 +589,32 @@ class _EmptyCollection extends StatelessWidget {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          decoration: BoxDecoration(border: Border.all(color: libraryRule)),
-          child: Column(
-            children: [
-              const Icon(
-                Icons.auto_stories_outlined,
-                size: 30,
-                color: libraryAccent,
+        child: LibraryFrame(
+          child: LibraryInk(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.auto_stories_outlined,
+                    size: 30,
+                    color: libraryAccent,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Collect your first word',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Add a Hungarian or English word below to save its translation.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Collect your first word',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Add a Hungarian or English word below to save its translation.',
-                textAlign: TextAlign.center,
-              ),
-            ],
+            ),
           ),
         ),
       ),
