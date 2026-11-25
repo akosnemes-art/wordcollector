@@ -1,0 +1,16 @@
+Word Collector bundles two FreeDict dictionaries, read directly from their SLOB files.
+
+Hungarian–English FreeDict Dictionary, 0.4.1
+Copyright (C) 1999 Vony Attila and Bui Pol, 2000–2017 FreeDict Project.
+GNU General Public License version 2.
+Source: https://download.freedict.org/dictionaries/hun-eng/0.4.1/freedict-hun-eng-0.4.1.src.tar.xz
+
+English–Hungarian FreeDict Dictionary, 0.2.1
+FreeDict Project and contributors. See the source archive for credits.
+GNU General Public License version 2 or later.
+Source: https://download.freedict.org/dictionaries/eng-hun/0.2.1/freedict-eng-hun-0.2.1.src.tar.xz
+
+See GPL-2.0.txt for the license. Copies of the source archives are in the
+repository's dictionaries/source directory. The SLOB conversion tools are
+available at https://github.com/itkach/tei2slob and https://github.com/freedict/tools.
+FreeDict: https://freedict.org/

@@ -1,0 +1,35 @@
+name: wordcollector
+description: A tactile vocabulary notebook for language learners.
+publish_to: 'none'
+version: 0.1.0+2
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  html: ^0.15.6
+  shared_preferences: ^2.5.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - dictionaries/freedict-eng-hun-0.2.1.slob
+    - dictionaries/freedict-hun-eng-0.4.1.slob
+    - dictionaries/NOTICE.txt
+    - dictionaries/GPL-2.0.txt
+    - assets/fonts/NOTICE.txt
+  fonts:
+    - family: Noto Serif Display
+      fonts:
+        - asset: assets/fonts/NotoSerifDisplay-Regular.ttf
+        - asset: assets/fonts/NotoSerifDisplay-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/NotoSerifDisplay-Italic.ttf
+          style: italic
